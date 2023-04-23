@@ -1,6 +1,7 @@
 import copy
 import random
-from typing import Callable, Optional, Tuple
+from functools import partial
+from typing import Callable, Optional, Tuple, List
 
 
 def initialize_population(services: dict, users: dict, population_size: int) -> list:
@@ -83,35 +84,101 @@ def default_fitness_function(assignment_solution: dict, services: dict, users: d
     Returns:
         float: The fitness score of the given assignment solution.
     """
-    fitness = 0
+    fitness = -100
 
     for service, assigned_users in assignment_solution.items():
         service_info = services[service]
         num_assigned_users = len(assigned_users)
 
-        # Bonus for solutions that assign users near the recommended value
+        # Prefers for solutions that assign users near the recommended value
+        # (positive or negative value is punishment, score 0 for the best fit)
         if service_info["min"] <= num_assigned_users <= service_info["max"]:
-            fitness += abs(num_assigned_users - service_info["rec"])
+            fitness += abs(num_assigned_users - service_info["rec"]) * service_info["priority"]
 
         # Punish solutions that assign users below the minimum value
+        # (positive value is punishment)
         elif num_assigned_users < service_info["min"]:
-            fitness -= (service_info["min"] - num_assigned_users) * service_info["priority"]
+            fitness += (service_info["min"] - num_assigned_users) * service_info["priority"]
 
         # Punish solutions that assign users above the maximum value
+        # (positive value is punishment)
         else:  # num_assigned_users > service_info["max"]:
-            fitness -= (num_assigned_users - service_info["max"]) * service_info["priority"]
+            fitness += (num_assigned_users - service_info["max"]) * service_info["priority"]
 
         # Punish solutions that assign users to their cannot_assign services
+        # (positive value is punishment)
         for user in assigned_users:
             if service in users[user]["cannot_assign"]:
-                fitness -= 100 * service_info["priority"]
+                fitness += 100 * service_info["priority"]
 
         # Bonus solutions that assign users to their preferred services
+        # (negative value is bonus)
         for user, user_info in users.items():
             if service in user_info["preferences"] and user in assigned_users:
-                fitness += 10
+                fitness -= 20
 
-    return -fitness
+    return fitness
+
+
+def least_changed_fitness_function(prev_solution: dict, solution: dict, services: dict, users: dict) -> float:
+    """
+    A fitness function that favors solutions with the least changes from a previous solution.
+
+    Args:
+        solution (dict): The assignment solution to evaluate.
+        services (dict): The input services dictionary.
+        users (dict): The input users dictionary.
+        prev_solution (dict): The previous assignment solution to compare against.
+
+    Returns:
+        float: A fitness score for the assignment solution.
+    """
+    # Add the default fitness function score
+    fitness = default_fitness_function(solution, services, users)
+
+    # Bonus for users assigned to the same services as in the previous solution
+    same_user_assignments = 0
+    for service, assigned_users in solution.items():
+        if service in prev_solution:
+            prev_assigned_users = prev_solution[service]
+            same_users = set(assigned_users).intersection(set(prev_assigned_users))
+            same_user_assignments += len(same_users)
+
+    user_bonus = same_user_assignments * 100  # / sum(len(user_data["preferences"]) for user_data in users.values())
+    # (positive value is punishment)
+    fitness -= user_bonus
+
+    # Bonus for services having the same users assigned as in the previous solution
+    same_service_assignments = 0
+    for service, assigned_users in solution.items():
+        if service in prev_solution:
+            prev_assigned_users = prev_solution[service]
+            same_users = set(assigned_users).intersection(set(prev_assigned_users))
+            same_service_assignments += len(same_users)
+
+    service_bonus = same_service_assignments * 100
+    # (positive value is punishment)
+    fitness -= service_bonus
+
+    # Malus for user and service changes
+    user_changes = 0
+    service_changes = 0
+
+    for service, service_data in services.items():
+        if service in prev_solution:
+            prev_service_data = prev_solution[service]
+            if service_data != prev_service_data:
+                service_changes += 1
+            for user, user_data in users.items():
+                if user in prev_service_data and user not in service_data:
+                    user_changes += 1
+
+    user_malus = user_changes
+    service_malus = service_changes
+    # (positive value is punishment)
+    fitness += (user_malus + service_malus)
+
+    return fitness
 
 
 def selection(fitness_scores: list) -> Tuple[int, int]:
@@ -332,8 +399,51 @@ def polish_errors(errors: dict) -> dict:
     return polished_errors
 
 
+def calculate_diff(solution1: dict, solution2: dict) -> dict:
+    """
+    Calculate the differences between two solution JSON objects and return the differences categorized into
+    "added" and "removed" attributes for each service.
+
+    Args:
+        solution1 (dict): The first solution JSON object.
+        solution2 (dict): The second solution JSON object.
+
+    Returns:
+        dict: A dictionary with the differences between the two solutions, categorized into "added" and
+              "removed" attributes for each service.
+    """
+    diff = {}
+
+    all_services = set(solution1.keys()).union(set(solution2.keys()))
+
+    for service in all_services:
+        service_diff = {
+            "added": [],
+            "removed": []
+        }
+
+        if service not in solution1:
+            service_diff["added"] = solution2[service]
+        elif service not in solution2:
+            service_diff["removed"] = solution1[service]
+        else:
+            added_users = set(solution2[service]) - set(solution1[service])
+            removed_users = set(solution1[service]) - set(solution2[service])
+
+            if added_users:
+                service_diff["added"] = list(added_users)
+            if removed_users:
+                service_diff["removed"] = list(removed_users)
+
+        if service_diff["added"] or service_diff["removed"]:
+            diff[service] = service_diff
+
+    return diff
+
+
 def genetic_algorithm(services: dict, users: dict, population_size: int = 100, num_generations: int = 100,
-                      mutation_rate: float = 0.01, fitness_fn: Optional[Callable] = None) -> dict:
+                      mutation_rate: float = 0.01, fitness_fn: Optional[Callable] = None,
+                      initial_population: Optional[List[dict]] = None) -> dict:
     """
     Run the genetic algorithm to find an optimal assignment solution based on user preferences and constraints.
 
@@ -344,12 +454,13 @@ def genetic_algorithm(services: dict, users: dict, population_size: int = 100, n
         num_generations (int): The number of generations for the genetic algorithm to run (default: 100).
         mutation_rate (float): The probability of mutation for each individual in the population (default: 0.01).
         fitness_fn (Callable, optional): An optional custom fitness function.
+        initial_population: An optional previous solution to be used as starting point
 
     Returns:
         dict: The best assignment solution found by the genetic algorithm.
     """
     # Initialize the population
-    population = initialize_population(services, users, population_size)
+    population = initial_population or initialize_population(services, users, population_size)
 
     # If no custom fitness function is provided, use the default fitness function
     if fitness_fn is None:
@@ -389,3 +500,38 @@ def genetic_algorithm(services: dict, users: dict, population_size: int = 100, n
         report_generation(generation, fitness_scores, best_solution, services, users)
 
     return best_solution
+
+
+def update_genetic_algorithm(prev_solution: dict, updated_services: dict, updated_users: dict,
+                             population_size: int = 100, num_generations: int = 100, mutation_rate: float = 0.01,
+                             fitness_fn: Optional[Callable] = None) -> dict:
+    """
+    Update the previous assignment solution with updated services and users using a genetic algorithm.
+
+    Args:
+        prev_solution (dict): The previous assignment solution.
+        updated_services (dict): The updated services dictionary.
+        updated_users (dict): The updated users dictionary.
+        population_size (int): The size of the population for each generation in the genetic algorithm (default: 100).
+        num_generations (int): The number of generations for the genetic algorithm to run (default: 100).
+        mutation_rate (float): The probability of mutation for each individual in the population (default: 0.01).
+        fitness_fn (Optional[Callable]): An optional fitness function to use in the genetic algorithm.
+
+    Returns:
+        dict: The updated assignment solution.
+    """
+
+    # Create the initial population with the given previous solution
+    population = initialize_population(updated_services, updated_users, population_size - 1)
+    population.append(prev_solution)
+
+    if fitness_fn is None:
+        fitness_fn = partial(least_changed_fitness_function, prev_solution)
+
+    # Run the genetic algorithm using the initial population
+    updated_solution = genetic_algorithm(updated_services, updated_users, population_size, num_generations,
+                                         mutation_rate,
+                                         fitness_fn,
+                                         population)
+
+    return updated_solution
