@@ -20,7 +20,7 @@ st.title('Services and Users Assignment Center')
 st.subheader('Genetic Algorithm Parameters')
 population_size = st.slider('Population Size', min_value=500, max_value=5000, value=1500, step=100)
 num_generations = st.slider('Number of Generations', min_value=1000, max_value=10000, value=2500, step=250)
-mutation_rate = st.slider('Mutation Rate', min_value=0.0, max_value=1.0, value=0.01, step=0.05)
+mutation_rate = st.slider('Mutation Rate', min_value=0.0, max_value=1.0, value=0.05, step=0.01)
 
 # Button to run the genetic algorithm
 new_generation_run = st.button('Run new solution')
