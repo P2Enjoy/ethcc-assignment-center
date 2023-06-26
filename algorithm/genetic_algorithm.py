@@ -5,8 +5,7 @@ from typing import List, Dict, Any
 from collections import defaultdict
 
 from exporters.csv import report_generation
-from models import TimeSlot, Shift, Service, Team, Volunteer, Position, Assignment
-from run import final_json
+from algorithm.models import TimeSlot, Shift, Service, Team, Volunteer, Position, Assignment
 
 
 def initialize_population(population_size: int, positions: List[Position], volunteers: List[Volunteer],
@@ -69,15 +68,50 @@ def initialize_population(population_size: int, positions: List[Position], volun
                     assignment.volunteer_id == volunteer.id)
 
                 for shift_id in preferred_shifts:
-                    available_positions = [position for position in positions if position.shift_id == shift_id and
-                                           len(position_volunteers[position.id]) < position.max_volunteers]
+                    if volunteer_daily_assignment_count[volunteer.id][shift_dict[shift_id].time_slot.day] < 1:
+                        available_positions = [position for position in positions if position.shift_id == shift_id and
+                                               len(position_volunteers[position.id]) < position.max_volunteers]
 
-                    if available_positions:
-                        selected_position = random.choice(available_positions)
-                        assignments.append(Assignment(position_id=selected_position.id, volunteer_id=volunteer.id))
-                        position_volunteers[selected_position.id].add(volunteer.id)
-                        volunteer_assignment_count[volunteer.id] += 1
-                        volunteer_daily_assignment_count[volunteer.id][shift_dict[shift_id].time_slot.day] += 1
+                        if available_positions:
+                            selected_position = random.choice(available_positions)
+                            assignments.append(Assignment(position_id=selected_position.id, volunteer_id=volunteer.id))
+                            position_volunteers[selected_position.id].add(volunteer.id)
+                            volunteer_assignment_count[volunteer.id] += 1
+                            volunteer_daily_assignment_count[volunteer.id][shift_dict[shift_id].time_slot.day] += 1
+
+        # Ensure minimum number of volunteers for all positions
+        for position in positions:
+            current_volunteers = len(position_volunteers[position.id])
+            required_volunteers = position.min_volunteers - current_volunteers
+            if required_volunteers > 0:
+                available_volunteers = [vol for vol in volunteers if
+                                        volunteer_assignment_count[vol.id] < 4 and
+                                        volunteer_daily_assignment_count[vol.id][shift_dict[position.shift_id].time_slot.day] < 1]
+
+                selected_volunteers = random.sample(available_volunteers,
+                                                    min(len(available_volunteers), required_volunteers))
+                for volunteer in selected_volunteers:
+                    assignments.append(Assignment(position_id=position.id, volunteer_id=volunteer.id))
+                    position_volunteers[position.id].add(volunteer.id)
+                    volunteer_assignment_count[volunteer.id] += 1
+                    volunteer_daily_assignment_count[volunteer.id][shift_dict[position.shift_id].time_slot.day] += 1
+
+        # Try to reach recommended number of volunteers for all positions
+        for position in positions:
+            current_volunteers = len(position_volunteers[position.id])
+            desired_volunteers = position.recommended_volunteers - current_volunteers
+            if desired_volunteers > 0:
+                available_volunteers = [vol for vol in volunteers if
+                                        volunteer_assignment_count[vol.id] < 4 and
+                                        volunteer_daily_assignment_count[vol.id][shift_dict[position.shift_id].time_slot.day] < 1]
+
+                selected_volunteers = random.sample(available_volunteers,
+                                                    min(len(available_volunteers), desired_volunteers))
+                for volunteer in selected_volunteers:
+                    assignments.append(Assignment(position_id=position.id, volunteer_id=volunteer.id))
+                    position_volunteers[position.id].add(volunteer.id)
+                    volunteer_assignment_count[volunteer.id] += 1
+                    volunteer_daily_assignment_count[volunteer.id][shift_dict[position.shift_id].time_slot.day] += 1
 
         population.append(assignments)
 
@@ -496,11 +530,3 @@ def genetic_algorithm(input_json: Dict, custom_fitness_function=None) -> List[Di
         volunteer_dict,
         team_dict
     )
-
-
-# Print the merged input JSON
-print(json.dumps(final_json, indent=4))
-
-# Run the genetic algorithm
-result = genetic_algorithm(final_json)
-# `result` will be a list of dictionaries with the optimal volunteer assignment schedule

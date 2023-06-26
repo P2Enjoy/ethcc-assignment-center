@@ -5,6 +5,32 @@ from generators.demo.volunteers import test_generate_random_volunteers
 from generators.inputs import generate_input_positions
 from generators.shifts import generate_input_shifts
 
+
+# Data filling
+def read_input_teams():
+    data_teams = [
+            {
+                "name": "Team Entrance",
+                "leader": "Martino"
+            },
+            {
+                "name": "Team Press",
+                "leader": "Alice"
+            },
+            {
+                "name": "Team Security",
+                "leader": "Bob"
+            },
+            {
+                "name": "Team Desk",
+                "leader": "Grace"
+            }
+        ]
+
+    return data_teams
+
+
+data_json['teams'] = read_input_teams()
 # Data de-normalization to speed inference
 data_json['shifts'] = generate_input_shifts(shifts_sites_json)
 data_json['positions'] = generate_input_positions(data_json)

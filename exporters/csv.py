@@ -1,7 +1,7 @@
 import csv
 from typing import List, Dict, Any
 
-from models import Assignment, Position, Shift, Service, Volunteer, Team
+from algorithm.models import Assignment, Position, Shift, Service, Volunteer, Team
 
 
 def report_generation(population: List[List[Assignment]], fitness_values: List[int],
@@ -18,7 +18,7 @@ def report_generation(population: List[List[Assignment]], fitness_values: List[i
 
     # Write a CSV report with these informations for the volunteers
     # volunteer_name, team, team_leader, day, site, time_slot, service, relevant skills
-    with open('volunteers_report.csv', 'w', newline='') as file:
+    with open('output/volunteers_report.csv', 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(
             ["volunteer_name", "team", "team_leader", "day", "site", "time_slot", "service", "relevant_skills"])
@@ -38,7 +38,7 @@ def report_generation(population: List[List[Assignment]], fitness_values: List[i
 
     # Write a CSV report with these informations for the site managers
     # site, service, day, time_slot, unmet skills, missing volunteers to meet expectations
-    with open('site_managers_report.csv', 'w', newline='') as file:
+    with open('output/site_managers_report.csv', 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(
             ["site", "service", "day", "time_slot", "unmet_skills", "missing_volunteers_to_meet_expectations"])
@@ -69,7 +69,7 @@ def report_generation(population: List[List[Assignment]], fitness_values: List[i
 
     # Write a CSV report with these informations for the event organizers
     # volunteer_name, max assignments, [assignments day1, assignment day2, assignment day...], missed shift preferences
-    with open('event_organizers_report.csv', 'w', newline='') as file:
+    with open('output/event_organizers_report.csv', 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(["volunteer_name", "max_assignments", "assignments_days", "missed_shift_preferences"])
         volunteer_assignments = {}
@@ -97,7 +97,7 @@ def report_generation(population: List[List[Assignment]], fitness_values: List[i
 
     # Write a CSV report with these informations for the volunteers without assignments
     # volunteer_name
-    with open('unassigned_volunteers.csv', 'w', newline='') as file:
+    with open('output/unassigned_volunteers.csv', 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(["volunteer_name"])
 
