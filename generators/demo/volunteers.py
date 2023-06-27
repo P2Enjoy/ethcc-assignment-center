@@ -19,7 +19,6 @@ def test_generate_random_volunteers(input_json):
     for volunteer_id in range(1, total_recommended_volunteers):
         # Randomly select volunteer attributes
         volunteer_skills = random.sample(available_skills, k=random.randint(1, len(available_skills)))
-        volunteer_team = random.choice(input_json['teams'])
 
         # Determine if preferred shifts should be void
         volunteer_preferred_shifts = []
@@ -38,7 +37,7 @@ def test_generate_random_volunteers(input_json):
         new_volunteer = {
             'id': f'v{volunteer_id}',
             'skills': {skill: random.randint(1, 5) for skill in volunteer_skills},
-            'team': volunteer_team['name'],
+            'team': None,
             'preferred_shifts': [shift['id'] for shift in volunteer_preferred_shifts],
             'avoid_shifts': [shift['id'] for shift in volunteer_unavailable_shifts]
         }

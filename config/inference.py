@@ -5,11 +5,13 @@ MDM = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTaKfXjEWftHavdKwD1YJKLR1
 CDB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQwrj4_i1SUflGfopYKZ8iBtz5XUSM9DtCFfvC1v-SeqGXWRTn3n-Ugf2F2IH999Zev1drD1Jws48sF/pub?output=csv"
 # Skills oer service
 SERVICES = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRI2YS7YoZPIgu-zXbbC7Wj3KnC_R9NgOt66CwDZCLm9M4-TCpe7vw3ikRKNXzXFsvOVQcGpbohQumC/pub?output=csv"
+# Volunteer database
+VOLUNTEERS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT4qWf0v6JO4V80G_vPh95OsO4OCmaBwDWOvCAC-X-7bVkBq8ZpgVh5Z5fnASnUDB_z619c7co3MEeE/pub?output=csv"
 
 # Generation parameters
 inference_config = {
-    "population_size": 350,
-    "number_of_generations": 1500,
+    "population_size": 50,
+    "number_of_generations": 100,
     "crossover_rate": 0.85,
     "mutation_rate": 0.05,
     "tournament_size": 7,

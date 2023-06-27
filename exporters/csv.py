@@ -21,7 +21,7 @@ def report_generation(best_solution: List[Assignment],
             volunteer = volunteers[assignment.volunteer_id]
             shift = shifts[position.shift_id]
             service = services[position.service_id]
-            team = teams[volunteer.team]
+            team = teams[volunteer.team] if volunteer.team in teams else None
             day = shift.time_slot.day
             time_slot = f"{shift.time_slot.start} - {shift.time_slot.end}"
             site = shift.site

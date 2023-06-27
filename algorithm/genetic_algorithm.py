@@ -58,9 +58,12 @@ def initialize_population(population_size: int, positions: List[Position], volun
 
             num_volunteers = random.randint(position.min_volunteers, position.max_volunteers)
 
-            # Select volunteers
-            selected_volunteers = random.sample(preferred_candidates or candidates,
-                                                min(len(candidates), num_volunteers, position.recommended_volunteers))
+            # Select volunteers (preferred in priority)
+            selected_volunteers = random.sample(preferred_candidates,
+                                                max(0, min(len(preferred_candidates), num_volunteers, position.recommended_volunteers)))
+            if len(selected_volunteers) == 0:
+                selected_volunteers = random.sample(candidates,
+                                                max(0, min(len(candidates), num_volunteers, position.recommended_volunteers)))
 
             for volunteer in selected_volunteers:
                 assignments.append(Assignment(position_id=position.id, volunteer_id=volunteer.id))
