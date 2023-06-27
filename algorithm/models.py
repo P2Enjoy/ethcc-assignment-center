@@ -23,9 +23,10 @@ class Service:
 
 
 class Team:
-    def __init__(self, name: str, leader: str):
+    def __init__(self, name: str, leader: str, services: List[str]):
         self.name = name
         self.leader = leader
+        self.services = services
 
 
 class Volunteer:

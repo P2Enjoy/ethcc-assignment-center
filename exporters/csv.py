@@ -4,19 +4,13 @@ from typing import List, Dict, Any
 from algorithm.models import Assignment, Position, Shift, Service, Volunteer, Team
 
 
-def report_generation(population: List[List[Assignment]], fitness_values: List[int],
+def report_generation(best_solution: List[Assignment],
                       positions: Dict[str, Position], shifts: Dict[str, Shift],
                       services: Dict[str, Service], volunteers: Dict[str, Volunteer],
                       teams: Dict[str, Team]) -> List[Dict[str, Any]]:
-    # Find the index of the best solution in the population
-    best_solution_index = fitness_values.index(max(fitness_values))
-
-    # Extract the best solution (list of Assignments)
-    best_solution = population[best_solution_index]
-
     report = []
 
-    # Write a CSV report with these informations for the volunteers
+    # Write a CSV report with these information for the volunteers
     # volunteer_name, team, team_leader, day, site, time_slot, service, relevant skills
     with open('output/volunteers_report.csv', 'w', newline='') as file:
         writer = csv.writer(file)

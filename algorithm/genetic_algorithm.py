@@ -9,31 +9,35 @@ from algorithm.models import TimeSlot, Shift, Service, Team, Volunteer, Position
 
 
 def initialize_population(population_size: int, positions: List[Position], volunteers: List[Volunteer],
-                          teams: List[Team], services: List[Service], shifts: List[Shift]) -> List[List[Assignment]]:
+                          teams: List[Team], services: List[Service], shifts: List[Shift]) \
+        -> List[List[List[Assignment] | List[Volunteer]]]:
     population = []
 
-    # Create dictionaries for easier lookup
-    volunteer_dict = {volunteer.id: volunteer for volunteer in volunteers}
+    # Create various dictionaries for easier lookup
     position_dict = {position.id: position for position in positions}
     service_dict = {service.id: service for service in services}
     shift_dict = {shift.id: shift for shift in shifts}
 
-    for gen in range(population_size):
+    for num in range(population_size):
         assignments = []
         position_volunteers = defaultdict(set)
+
+        # Create dictionaries of generation specifics volunteers for easier lookup
+        gen_specific_vol = volunteers[:]
+        volunteer_dict = {vol.id: vol for vol in gen_specific_vol}
 
         # Count of assignments per volunteer for the current population
         volunteer_assignment_count = defaultdict(int)
         # Count of assignments per day for each volunteer for the current population
         volunteer_daily_assignment_count = defaultdict(lambda: defaultdict(int))
 
-        # Assign volunteers considering the constraints
+        # Assign generation specifics volunteers considering the constraints
         for position in positions:
             service = service_dict[position.service_id]
             required_skills = set(service.key_skills)
             shift = shift_dict[position.shift_id]
 
-            candidates = [vol for vol in volunteers if
+            candidates = [vol for vol in gen_specific_vol if
                           any(skill in vol.skills for skill in required_skills) and
                           volunteer_assignment_count[vol.id] < 4 and
                           volunteer_daily_assignment_count[vol.id][shift.time_slot.day] < 1]
@@ -42,11 +46,15 @@ def initialize_population(population_size: int, positions: List[Position], volun
             assigned_volunteer_ids = position_volunteers[position.id]
             assigned_teams = {volunteer_dict[vol_id].team for vol_id in assigned_volunteer_ids}
 
-            # Prefer volunteers from the same team
+            # Prefer generation specifics volunteers from the same team (if any)
             common_team = None
             if assigned_teams:
                 common_team = assigned_teams.pop()
-            preferred_candidates = [vol for vol in candidates if vol.team == common_team]
+
+            if common_team is not None:
+                preferred_candidates = [vol for vol in candidates if vol.team == common_team]
+            else:
+                preferred_candidates = []
 
             num_volunteers = random.randint(position.min_volunteers, position.max_volunteers)
 
@@ -60,8 +68,18 @@ def initialize_population(population_size: int, positions: List[Position], volun
                 volunteer_assignment_count[volunteer.id] += 1
                 volunteer_daily_assignment_count[volunteer.id][shift.time_slot.day] += 1
 
-        # Attempt to add preferred shifts for remaining volunteers
-        for volunteer in volunteers:
+                # Assign the volunteer team to the generation specific volunteer during its first assignment
+                if volunteer_dict[volunteer.id].team is None:
+                    current_service_name = service_dict[position.service_id].name
+                    suitable_teams = [team for team in teams if current_service_name in team.services]
+
+                    # Randomly select a suitable team
+                    if suitable_teams:
+                        selected_team = random.choice(suitable_teams)
+                        volunteer_dict[volunteer.id].team = selected_team.name
+
+        # Attempt to add preferred shifts for the remaining generation specifics volunteers
+        for volunteer in gen_specific_vol:
             if volunteer_assignment_count[volunteer.id] < 4:
                 preferred_shifts = set(volunteer.preferred_shifts) - set(
                     position_dict[assignment.position_id].shift_id for assignment in assignments if
@@ -79,14 +97,25 @@ def initialize_population(population_size: int, positions: List[Position], volun
                             volunteer_assignment_count[volunteer.id] += 1
                             volunteer_daily_assignment_count[volunteer.id][shift_dict[shift_id].time_slot.day] += 1
 
+                            # Assign the team to the generation specific volunteer during its first assignment
+                            if volunteer_dict[volunteer.id].team is None:
+                                current_service_name = service_dict[selected_position.service_id].name
+                                suitable_teams = [team for team in teams if current_service_name in team.services]
+
+                                # Randomly select a suitable team
+                                if suitable_teams:
+                                    selected_team = random.choice(suitable_teams)
+                                    volunteer_dict[volunteer.id].team = selected_team.name
+
         # Ensure minimum number of volunteers for all positions
         for position in positions:
             current_volunteers = len(position_volunteers[position.id])
             required_volunteers = position.min_volunteers - current_volunteers
             if required_volunteers > 0:
-                available_volunteers = [vol for vol in volunteers if
+                available_volunteers = [vol for vol in gen_specific_vol if
                                         volunteer_assignment_count[vol.id] < 4 and
-                                        volunteer_daily_assignment_count[vol.id][shift_dict[position.shift_id].time_slot.day] < 1]
+                                        volunteer_daily_assignment_count[vol.id][
+                                            shift_dict[position.shift_id].time_slot.day] < 1]
 
                 selected_volunteers = random.sample(available_volunteers,
                                                     min(len(available_volunteers), required_volunteers))
@@ -96,14 +125,25 @@ def initialize_population(population_size: int, positions: List[Position], volun
                     volunteer_assignment_count[volunteer.id] += 1
                     volunteer_daily_assignment_count[volunteer.id][shift_dict[position.shift_id].time_slot.day] += 1
 
+                    # Assign the volunteer team to the generation specific volunteer during its first assignment
+                    if volunteer_dict[volunteer.id].team is None:
+                        current_service_name = service_dict[position.service_id].name
+                        suitable_teams = [team for team in teams if current_service_name in team.services]
+
+                        # Randomly select a suitable team
+                        if suitable_teams:
+                            selected_team = random.choice(suitable_teams)
+                            volunteer_dict[volunteer.id].team = selected_team.name
+
         # Try to reach recommended number of volunteers for all positions
         for position in positions:
             current_volunteers = len(position_volunteers[position.id])
             desired_volunteers = position.recommended_volunteers - current_volunteers
             if desired_volunteers > 0:
-                available_volunteers = [vol for vol in volunteers if
+                available_volunteers = [vol for vol in gen_specific_vol if
                                         volunteer_assignment_count[vol.id] < 4 and
-                                        volunteer_daily_assignment_count[vol.id][shift_dict[position.shift_id].time_slot.day] < 1]
+                                        volunteer_daily_assignment_count[vol.id][
+                                            shift_dict[position.shift_id].time_slot.day] < 1]
 
                 selected_volunteers = random.sample(available_volunteers,
                                                     min(len(available_volunteers), desired_volunteers))
@@ -113,9 +153,23 @@ def initialize_population(population_size: int, positions: List[Position], volun
                     volunteer_assignment_count[volunteer.id] += 1
                     volunteer_daily_assignment_count[volunteer.id][shift_dict[position.shift_id].time_slot.day] += 1
 
-        population.append(assignments)
+                    # Assign the volunteer team to the generation specific volunteer during its first assignment
+                    if volunteer_dict[volunteer.id].team is None:
+                        current_service_name = service_dict[position.service_id].name
+                        suitable_teams = [team for team in teams if current_service_name in team.services]
 
-        print(f'Generated population {gen} out of total pool {population_size} with diversity of {calculate_population_diversity(population[-2:])}.')
+                        # Randomly select a suitable team
+                        if suitable_teams:
+                            selected_team = random.choice(suitable_teams)
+                            volunteer_dict[volunteer.id].team = selected_team.name
+
+        population.append([assignments, gen_specific_vol])
+
+        if population_size < 2:
+            print(f'Rare mutation occurred.')
+        else:
+            print(
+                f'Generated population {num} out of total pool {population_size} with diversity of {calculate_population_diversity(population[-2:])}.')
 
     return population
 
@@ -229,18 +283,8 @@ def default_fitness_function(assignments: List[Assignment], positions: List[Posi
     return fitness
 
 
-def calculate_fitness(population: List[List[Assignment]], positions: List[Position], volunteers: List[Volunteer],
-                      teams: List[Team], services: List[Service], shifts: List[Shift],
-                      fitness_weights: Dict[str, int]) -> List[int]:
-    """
-    This function calculates the fitness of all solutions in the population.
-    """
-    return [default_fitness_function(assignments, positions, volunteers, teams, services, shifts, fitness_weights) for
-            assignments in population]
-
-
-def selection(population: List[List[Assignment]], fitness_scores: List[float], tournament_size: int = 3,
-              p_select_second_best: float = 0.2) -> List[List[Assignment]]:
+def selection(population: List[List[Assignment]], volunteers: List[Volunteer], fitness_scores: List[float], tournament_size: int = 3,
+              p_select_second_best: float = 0.2) -> List[List[List[Assignment] | List[Volunteer]]]:
     selected = []
     population_size = len(population)
 
@@ -257,7 +301,7 @@ def selection(population: List[List[Assignment]], fitness_scores: List[float], t
             selected_idx = sorted_idx[0]
 
         # Append the selected individual to the selected parents
-        selected.append(population[selected_idx])
+        selected.append([population[selected_idx], volunteers[selected_idx]])
 
     return selected
 
@@ -279,6 +323,9 @@ def crossover(parent1: List[Assignment], parent2: List[Assignment]) -> tuple[lis
             while True:
                 cycle.append(current_position)
                 visited.add(current_position)
+                # Check if the current position exists in parent1_dict before trying to access it
+                if current_position not in parent1_dict:
+                    break
                 next_position = parent2_dict.get(parent1_dict[current_position].volunteer_id)
                 if next_position is None or next_position.position_id == start_position:
                     break
@@ -313,11 +360,18 @@ def crossover(parent1: List[Assignment], parent2: List[Assignment]) -> tuple[lis
 
 def mutation(assignments: List[Assignment], positions: List[Position], volunteers: List[Volunteer],
              teams: List[Team], services: List[Service], shifts: List[Shift],
-             mutation_rate: float) -> List[Assignment]:
+             mutation_rate: float, rare_mutation_rate: float) -> List[Assignment]:
     new_assignments = assignments[:]
 
     # Check if mutation should occur
     if random.random() < mutation_rate:
+
+        # Sometimes the child have nothing in common with ancestors, making a one-of-a-kind mutation
+        if random.random() < rare_mutation_rate:
+            # Generate a single new individual using a modified initialize_population function
+            new_individual, _ = map(list, zip(*initialize_population(1, positions, volunteers, teams, services, shifts)))
+            return new_individual[0]
+
         # Select two random indices
         idx1, idx2 = random.sample(range(len(new_assignments)), 2)
 
@@ -330,18 +384,6 @@ def mutation(assignments: List[Assignment], positions: List[Position], volunteer
         new_assignments[idx2] = Assignment(position_id=new_assignments[idx2].position_id, volunteer_id=volunteer1)
 
     return new_assignments
-
-
-def smart_mutation(assignments: List[Assignment], positions: List[Position], volunteers: List[Volunteer],
-                   teams: List[Team], services: List[Service], shifts: List[Shift], mutation_rate: float) -> List[Assignment]:
-    # Check if mutation should occur
-    if random.random() < mutation_rate:
-        # Generate a single new individual using a modified initialize_population function
-        new_individual = initialize_population(1, positions, volunteers, teams, services, shifts)[0]
-        return new_individual
-    else:
-        # If mutation does not occur, return the original assignments unchanged
-        return assignments
 
 
 def calculate_population_diversity(population):
@@ -364,7 +406,7 @@ def calculate_progress_rate(new_best_fitness, prev_best_fitness, num_generations
     return (new_best_fitness - prev_best_fitness) / num_generations
 
 
-def genetic_algorithm(input_json: Dict, custom_fitness_function=None) -> List[Dict[str, Any]]:
+def genetic_algorithm(input_json: Dict, fitness_function=None) -> List[Dict[str, Any]]:
     # Extract values from input JSON
     population_size = input_json["population_size"]
     number_of_generations = input_json["number_of_generations"]
@@ -374,12 +416,11 @@ def genetic_algorithm(input_json: Dict, custom_fitness_function=None) -> List[Di
     safe_mutation_rate = mutation_rate
     tournament_size = input_json["tournament_size"]
     select_second_best = input_json["select_second_best"]
-    children_of_the_atom = input_json["children_of_the_atom"]
-    safe_children_of_the_atom = children_of_the_atom
+    rare_mutation_rate = input_json["rare_mutation_rate"]
+    safe_rare_mutation_rate = rare_mutation_rate
     fitness_weights = input_json["fitness_weights"]
 
     # Extract and create objects from input JSON
-    volunteers = [Volunteer(**v) for v in input_json["volunteers"]]
     teams = [Team(**t) for t in input_json["teams"]]
     services = [Service(**s) for s in input_json["services"]]
     shifts = [Shift(id=s["id"], time_slot=TimeSlot(**s["time_slot"]), site=s["site"]) for s in input_json["shifts"]]
@@ -391,18 +432,19 @@ def genetic_algorithm(input_json: Dict, custom_fitness_function=None) -> List[Di
     position_dict = {position.id: position for position in positions}
     shift_dict = {shift.id: shift for shift in shifts}
     service_dict = {service.id: service for service in services}
-    volunteer_dict = {volunteer.id: volunteer for volunteer in volunteers}
     team_dict = {team.name: team for team in teams}
 
     # Initialize the population
-    population = initialize_population(
-        population_size=population_size,
-        positions=positions,
-        teams=teams,
-        volunteers=volunteers,
-        services=services,
-        shifts=shifts
-    )
+    population, population_volunteers = map(list, zip(
+        *initialize_population(
+            population_size=population_size,
+            positions=positions,
+            teams=teams,
+            volunteers=[Volunteer(**v) for v in input_json["volunteers"]],
+            services=services,
+            shifts=shifts
+        )
+    ))
 
     prev_best_fitness = -float('inf')
     prev_diversity = -float('inf')
@@ -413,58 +455,40 @@ def genetic_algorithm(input_json: Dict, custom_fitness_function=None) -> List[Di
     fitness_values = []
     for generation in range(number_of_generations):
         # Calculate fitness
-        if custom_fitness_function:
-            fitness_values = [
-                custom_fitness_function(assignment, positions, volunteers, teams, services, shifts, fitness_weights)
-                for assignment in population]
-        else:
-            fitness_values = calculate_fitness(population, positions, volunteers, teams, services, shifts,
-                                               fitness_weights)
-
-        # Selection
-        parents = selection(population, fitness_values, tournament_size, select_second_best)
+        fitness_values = [
+            fitness_function(assignments, positions, volunteers, teams, services, shifts, fitness_weights)
+            for assignments, volunteers in zip(population, population_volunteers)
+        ]
 
         # Crossover
         if random.random() < crossover_rate:
+            # Selection
+            parents, parent_volunteers = zip(
+                *selection(population, population_volunteers, fitness_values, tournament_size, select_second_best)
+            )
 
             # Offsprings
             child1, child2 = crossover(*parents)
 
             # Mutation
-            if random.random() < children_of_the_atom:
-                child1 = smart_mutation(
-                    assignments=child1, positions=positions, volunteers=volunteers,
-                    teams=teams, services=services, shifts=shifts,
-                    mutation_rate=mutation_rate
-                )
-                child2 = smart_mutation(
-                    assignments=child2, positions=positions, volunteers=volunteers,
-                    teams=teams, services=services, shifts=shifts,
-                    mutation_rate=mutation_rate
-                )
-            else:
-                child1 = mutation(
-                    assignments=child1, positions=positions, volunteers=volunteers,
-                    teams=teams, services=services, shifts=shifts,
-                    mutation_rate=mutation_rate
-                )
-                child2 = mutation(
-                    assignments=child2, positions=positions, volunteers=volunteers,
-                    teams=teams, services=services, shifts=shifts,
-                    mutation_rate=mutation_rate
-                )
-
-            # Calculate fitness for the children
-            child1_fitness = custom_fitness_function(
-                child1, positions, volunteers, teams, services, shifts, fitness_weights
-            ) if custom_fitness_function else default_fitness_function(
-                child1, positions, volunteers, teams, services, shifts, fitness_weights
+            child1 = mutation(
+                assignments=child1, positions=positions, volunteers=[Volunteer(**v) for v in input_json["volunteers"]],
+                teams=teams, services=services, shifts=shifts,
+                mutation_rate=mutation_rate, rare_mutation_rate=rare_mutation_rate
+            )
+            child2 = mutation(
+                assignments=child2, positions=positions, volunteers=[Volunteer(**v) for v in input_json["volunteers"]],
+                teams=teams, services=services, shifts=shifts,
+                mutation_rate=mutation_rate, rare_mutation_rate=rare_mutation_rate
             )
 
-            child2_fitness = custom_fitness_function(
-                child2, positions, volunteers, teams, services, shifts, fitness_weights
-            ) if custom_fitness_function else default_fitness_function(
-                child2, positions, volunteers, teams, services, shifts, fitness_weights
+            # Calculate fitness for the children
+            child1_fitness = fitness_function(
+                child1, positions, random.choice(parent_volunteers), teams, services, shifts, fitness_weights
+            )
+
+            child2_fitness = fitness_function(
+                child2, positions, random.choice(parent_volunteers), teams, services, shifts, fitness_weights
             )
 
             # Replace the two worst individuals with the new children
@@ -476,10 +500,11 @@ def genetic_algorithm(input_json: Dict, custom_fitness_function=None) -> List[Di
             population[min_fitness_indices[1]] = child2
             fitness_values[min_fitness_indices[1]] = child2_fitness
 
-        # Every 10% of the total pool, readjust
-        if generation % (number_of_generations / 10) == 0:
+        # Every ~10% of the total pool, readjust
+        if generation % (number_of_generations / random.randint(7, 12)) == 0:
             # Calculate population diversity
-            current_diversity = calculate_fitness_population_diversity(fitness_values) # diversity = calculate_population_diversity(population)
+            current_diversity = calculate_fitness_population_diversity(
+                fitness_values)  # diversity = calculate_population_diversity(population)
 
             # Calculate progress rate
             current_best_fitness = max(fitness_values)
@@ -491,42 +516,37 @@ def genetic_algorithm(input_json: Dict, custom_fitness_function=None) -> List[Di
             if progress_rate < progress_rate_threshold or abs(prev_diversity - current_diversity) < diversity_threshold:
                 mutation_rate = min(mutation_rate * 1.2, 1)  # Increase by 20% up to 1.0
                 crossover_rate = min(crossover_rate * 1.1, 1)  # Increase by 20% up to 1.0
-                children_of_the_atom = min(children_of_the_atom * 1.05, 1)  # Increase by 20% up to 1.0
-                print(f"Increasing mutation rate to {mutation_rate}, crossover rate to [{crossover_rate},{children_of_the_atom}]")
+                rare_mutation_rate = min(rare_mutation_rate * 1.05, 1)  # Increase by 20% up to 1.0
+                print(
+                    f"Increasing mutation rate to [{mutation_rate},{rare_mutation_rate}], crossover rate to {crossover_rate}")
 
             # Optionally decrease mutation rate if progress rate is high
             elif progress_rate > progress_rate_threshold:
-                mutation_rate = max(mutation_rate * 0.9, safe_mutation_rate)  # Decrease by 10% down to initial parameter
-                crossover_rate = max(crossover_rate * 0.9, safe_crossover_rate)  # Decrease by 10% down to initial parameter
-                children_of_the_atom = max(children_of_the_atom * 0.9, safe_children_of_the_atom)  # Decrease by 10% down to initial parameter
-                print(f"Decreasing mutation rate to {mutation_rate}, crossover rate to [{crossover_rate},{children_of_the_atom}]")
+                mutation_rate = max(mutation_rate * 0.9,
+                                    safe_mutation_rate)  # Decrease by 10% down to initial parameter
+                crossover_rate = max(crossover_rate * 0.9,
+                                     safe_crossover_rate)  # Decrease by 10% down to initial parameter
+                rare_mutation_rate = max(rare_mutation_rate * 0.9,
+                                         safe_rare_mutation_rate)  # Decrease by 10% down to initial parameter
+                print(
+                    f"Decreasing mutation rate to [{mutation_rate},{rare_mutation_rate}], crossover rate to {crossover_rate}")
 
             # Store the current diversity and best fitness for the next iteration
             prev_best_fitness = current_best_fitness
             prev_diversity = current_diversity
 
-
-        # Find the index of the best solution in the population
-        # best_solution_index = fitness_values.index(max(fitness_values))
-        # Extract the best solution (list of Assignments)
-        # best_solution = population[best_solution_index]
-
-        # Find the index of the worst solution in the population
-        # worst_solution_index = fitness_values.index(min(fitness_values))
-        # Extract the best solution (list of Assignments)
-        # worst_solution = population[worst_solution_index]
-
         # Optionally print report
         print(
             f"Generation {generation}: Best Fitness = {max(fitness_values)}, Worst Fitness = {min(fitness_values)}, Avg Fitness = {statistics.mean(fitness_values)}, Median Fitness = {statistics.median(fitness_values)}")
 
-    # Report generation
+    # Find the index of the best solution in the population
+    best_solution_index = fitness_values.index(max(fitness_values))
+    # Extract the best solution (list of Assignments) and export the generation data
     return report_generation(
-        population,
-        fitness_values,
+        population[best_solution_index],
         position_dict,
         shift_dict,
         service_dict,
-        volunteer_dict,
+        {volunteer.id: volunteer for volunteer in population_volunteers[best_solution_index]},
         team_dict
     )

@@ -1,11 +1,20 @@
+# Teams
+TEAMS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQM-04xKkb6pffTENTjGLIsjFw2L3hTCFgMX4leZF7WyjUc1Mh3MBCZGKeIfqAfM829Ml6qEQg43x4C/pub?output=csv'
+# Shifts per site
+MDM = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTaKfXjEWftHavdKwD1YJKLR1noJdEi-TskhGcUTUGcQ_6O67YX9MIsTEE1WGH4P6O1hZ84-gerYSMO/pub?output=csv"
+CDB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQwrj4_i1SUflGfopYKZ8iBtz5XUSM9DtCFfvC1v-SeqGXWRTn3n-Ugf2F2IH999Zev1drD1Jws48sF/pub?output=csv"
+# Skills oer service
+SERVICES = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRI2YS7YoZPIgu-zXbbC7Wj3KnC_R9NgOt66CwDZCLm9M4-TCpe7vw3ikRKNXzXFsvOVQcGpbohQumC/pub?output=csv"
+
+# Generation parameters
 inference_config = {
-    "population_size": 100,
-    "number_of_generations": 100,
+    "population_size": 350,
+    "number_of_generations": 1500,
     "crossover_rate": 0.85,
     "mutation_rate": 0.05,
     "tournament_size": 7,
     "select_second_best": 0.2,
-    "children_of_the_atom": 0.15,
+    "rare_mutation_rate": 0.15,
     "fitness_weights": {
         # OUTSTANDING
         # Criteria 1: Each position has the recommended number of volunteers at best or between min/max
