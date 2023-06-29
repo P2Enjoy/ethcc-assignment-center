@@ -1,11 +1,47 @@
+import copy
 import json
 import statistics
 import random
+import numpy as np
 from typing import List, Dict, Any
 from collections import defaultdict
 
 from exporters.csv import report_generation
 from algorithm.models import TimeSlot, Shift, Service, Team, Volunteer, Position, Assignment
+
+
+def initialize_population_assign_volunteer(assignments, position, position_volunteers, service_dict, shift, teams,
+                                           volunteer, volunteer_assignment_count, volunteer_daily_assignment_count,
+                                           volunteer_dict):
+    assignments.append(Assignment(position_id=position.id, volunteer_id=volunteer.id))
+    position_volunteers[position.id].add(volunteer.id)
+    volunteer_assignment_count[volunteer.id] += 1
+    volunteer_daily_assignment_count[volunteer.id][shift.time_slot.day] += 1
+    # Assign the volunteer team to the generation specific volunteer during its first assignment
+    if volunteer_dict[volunteer.id].team is None:
+        current_service_name = service_dict[position.service_id].name
+        suitable_teams = [team for team in teams if current_service_name in team.services]
+
+        # Randomly select a suitable team
+        if suitable_teams:
+            selected_team = random.choice(suitable_teams)
+            volunteer_dict[volunteer.id].team = selected_team.name
+
+
+def initialize_population_volunteers_weighted_sample(num_volunteers, candidates, volunteer_assignment_count):
+    if not candidates:
+        return []
+
+    weights = np.array([(volunteer_assignment_count[vol.id] + 1) for vol in candidates], dtype=float)
+    sum_weights = weights.sum()
+    # Avoid division by 0 if all counts are 0, in that case, make the weights uniform
+    if sum_weights == 0:
+        weights = np.ones_like(weights) / len(weights)
+    else:
+        weights /= sum_weights  # normalize weights to sum to 1
+    size = max(0, min(len(candidates), num_volunteers))
+    selected_volunteers = list(np.random.choice(candidates, size=size, replace=False, p=weights))
+    return selected_volunteers
 
 
 def initialize_population(population_size: int, positions: List[Position], volunteers: List[Volunteer],
@@ -22,8 +58,8 @@ def initialize_population(population_size: int, positions: List[Position], volun
         assignments = []
         position_volunteers = defaultdict(set)
 
-        # Create dictionaries of generation specifics volunteers for easier lookup
-        gen_specific_vol = volunteers[:]
+        # Create cloned dictionaries of generation's specific volunteers for easier lookup
+        gen_specific_vol = copy.deepcopy(volunteers)
         volunteer_dict = {vol.id: vol for vol in gen_specific_vol}
 
         # Count of assignments per volunteer for the current population
@@ -37,134 +73,88 @@ def initialize_population(population_size: int, positions: List[Position], volun
             required_skills = set(service.key_skills)
             shift = shift_dict[position.shift_id]
 
-            candidates = [vol for vol in gen_specific_vol if
-                          any(skill in vol.skills for skill in required_skills) and
-                          volunteer_assignment_count[vol.id] < 4 and
-                          volunteer_daily_assignment_count[vol.id][shift.time_slot.day] < 1]
+            # Select candidates who have required skills and
+            # do not have the current position shift in their avoid list
+            suitable_candidates = [vol for vol in gen_specific_vol if
+                                   any(skill in vol.skills for skill in required_skills) and
+                                   position.shift_id not in vol.avoid_shifts]
 
-            # Determine the team that has already been assigned to the current position
+            # This subset have ALL the skills for the position
+            perfect_candidates = [vol for vol in suitable_candidates if
+                                  all(skill in vol.skills for skill in required_skills)]
+
+            # Between suitable candidates, the one from the same team are preferred (if any)
             assigned_volunteer_ids = position_volunteers[position.id]
             assigned_teams = {volunteer_dict[vol_id].team for vol_id in assigned_volunteer_ids}
-
-            # Prefer generation specifics volunteers from the same team (if any)
             common_team = None
             if assigned_teams:
                 common_team = assigned_teams.pop()
-
             if common_team is not None:
-                preferred_candidates = [vol for vol in candidates if vol.team == common_team]
+                suitable_team_candidates = [vol for vol in suitable_candidates if vol.team == common_team]
             else:
-                preferred_candidates = []
+                suitable_team_candidates = []
 
-            num_volunteers = random.randint(position.min_volunteers, position.max_volunteers)
+            # This subset have ALL the skills for the position
+            perfect_team_candidates = [vol for vol in suitable_team_candidates if
+                                       all(skill in vol.skills for skill in required_skills)]
 
-            # Select volunteers (preferred in priority)
-            selected_volunteers = random.sample(preferred_candidates,
-                                                max(0, min(len(preferred_candidates), num_volunteers, position.recommended_volunteers)))
-            if len(selected_volunteers) == 0:
-                selected_volunteers = random.sample(candidates,
-                                                max(0, min(len(candidates), num_volunteers, position.recommended_volunteers)))
+            required_volunteers = position.min_volunteers
+            assigned_volunteers = 0
+            candidates_pools = [
+                [perfect_team_candidates, 1],
+                [suitable_team_candidates, required_volunteers],
+                [perfect_candidates, required_volunteers],
+                [suitable_candidates, required_volunteers],
+                [[vol for vol in gen_specific_vol
+                  if position.shift_id not in vol.avoid_shifts], required_volunteers]
+            ]
 
-            for volunteer in selected_volunteers:
-                assignments.append(Assignment(position_id=position.id, volunteer_id=volunteer.id))
-                position_volunteers[position.id].add(volunteer.id)
-                volunteer_assignment_count[volunteer.id] += 1
-                volunteer_daily_assignment_count[volunteer.id][shift.time_slot.day] += 1
+            # Loop until there are at least the minimum required number of volunteers
+            # or there are no volunteers left.
+            goal_reached = False
+            while not goal_reached:
+                goal_reached = True
 
-                # Assign the volunteer team to the generation specific volunteer during its first assignment
-                if volunteer_dict[volunteer.id].team is None:
-                    current_service_name = service_dict[position.service_id].name
-                    suitable_teams = [team for team in teams if current_service_name in team.services]
+                # Loop through each pool of candidates in priority order.
+                for pool, sample_num in candidates_pools:
+                    # Filter available candidates from the current pool whi have less than 4 assignments,
+                    # and have not reached daily assignment limit
+                    available_from_pool = [vol for vol in pool if
+                                           volunteer_assignment_count[vol.id] < 4 and
+                                           volunteer_daily_assignment_count[vol.id][shift.time_slot.day] < 1]
 
-                    # Randomly select a suitable team
-                    if suitable_teams:
-                        selected_team = random.choice(suitable_teams)
-                        volunteer_dict[volunteer.id].team = selected_team.name
+                    for vol in initialize_population_volunteers_weighted_sample(sample_num, available_from_pool, volunteer_assignment_count):
+                        # Assign the volunteer to the position using the provided function
+                        initialize_population_assign_volunteer(assignments, position, position_volunteers,
+                                                               service_dict, shift, teams, vol,
+                                                               volunteer_assignment_count,
+                                                               volunteer_daily_assignment_count, volunteer_dict)
+                        assigned_volunteers += 1
+
+                    if assigned_volunteers < required_volunteers:
+                        goal_reached = False
+                    else:
+                        goal_reached = True
+                        break
 
         # Attempt to add preferred shifts for the remaining generation specifics volunteers
-        for volunteer in gen_specific_vol:
-            if volunteer_assignment_count[volunteer.id] < 4:
-                preferred_shifts = set(volunteer.preferred_shifts) - set(
-                    position_dict[assignment.position_id].shift_id for assignment in assignments if
-                    assignment.volunteer_id == volunteer.id)
+        for volunteer in [vol for vol in gen_specific_vol if volunteer_assignment_count[vol.id] < 4]:
+            preferred_shifts = set(volunteer.preferred_shifts) - set(
+                position_dict[assignment.position_id].shift_id for assignment in assignments
+                if assignment.volunteer_id == volunteer.id
+            )
 
-                for shift_id in preferred_shifts:
-                    if volunteer_daily_assignment_count[volunteer.id][shift_dict[shift_id].time_slot.day] < 1:
-                        available_positions = [position for position in positions if position.shift_id == shift_id and
-                                               len(position_volunteers[position.id]) < position.max_volunteers]
+            for shift_id in preferred_shifts:
+                if volunteer_daily_assignment_count[volunteer.id][shift_dict[shift_id].time_slot.day] < 1:
+                    available_positions = [position for position in positions if position.shift_id == shift_id and
+                                           len(position_volunteers[position.id]) < position.max_volunteers]
 
-                        if available_positions:
-                            selected_position = random.choice(available_positions)
-                            assignments.append(Assignment(position_id=selected_position.id, volunteer_id=volunteer.id))
-                            position_volunteers[selected_position.id].add(volunteer.id)
-                            volunteer_assignment_count[volunteer.id] += 1
-                            volunteer_daily_assignment_count[volunteer.id][shift_dict[shift_id].time_slot.day] += 1
-
-                            # Assign the team to the generation specific volunteer during its first assignment
-                            if volunteer_dict[volunteer.id].team is None:
-                                current_service_name = service_dict[selected_position.service_id].name
-                                suitable_teams = [team for team in teams if current_service_name in team.services]
-
-                                # Randomly select a suitable team
-                                if suitable_teams:
-                                    selected_team = random.choice(suitable_teams)
-                                    volunteer_dict[volunteer.id].team = selected_team.name
-
-        # Ensure minimum number of volunteers for all positions
-        for position in positions:
-            current_volunteers = len(position_volunteers[position.id])
-            required_volunteers = position.min_volunteers - current_volunteers
-            if required_volunteers > 0:
-                available_volunteers = [vol for vol in gen_specific_vol if
-                                        volunteer_assignment_count[vol.id] < 4 and
-                                        volunteer_daily_assignment_count[vol.id][
-                                            shift_dict[position.shift_id].time_slot.day] < 1]
-
-                selected_volunteers = random.sample(available_volunteers,
-                                                    min(len(available_volunteers), required_volunteers))
-                for volunteer in selected_volunteers:
-                    assignments.append(Assignment(position_id=position.id, volunteer_id=volunteer.id))
-                    position_volunteers[position.id].add(volunteer.id)
-                    volunteer_assignment_count[volunteer.id] += 1
-                    volunteer_daily_assignment_count[volunteer.id][shift_dict[position.shift_id].time_slot.day] += 1
-
-                    # Assign the volunteer team to the generation specific volunteer during its first assignment
-                    if volunteer_dict[volunteer.id].team is None:
-                        current_service_name = service_dict[position.service_id].name
-                        suitable_teams = [team for team in teams if current_service_name in team.services]
-
-                        # Randomly select a suitable team
-                        if suitable_teams:
-                            selected_team = random.choice(suitable_teams)
-                            volunteer_dict[volunteer.id].team = selected_team.name
-
-        # Try to reach recommended number of volunteers for all positions
-        for position in positions:
-            current_volunteers = len(position_volunteers[position.id])
-            desired_volunteers = position.recommended_volunteers - current_volunteers
-            if desired_volunteers > 0:
-                available_volunteers = [vol for vol in gen_specific_vol if
-                                        volunteer_assignment_count[vol.id] < 4 and
-                                        volunteer_daily_assignment_count[vol.id][
-                                            shift_dict[position.shift_id].time_slot.day] < 1]
-
-                selected_volunteers = random.sample(available_volunteers,
-                                                    min(len(available_volunteers), desired_volunteers))
-                for volunteer in selected_volunteers:
-                    assignments.append(Assignment(position_id=position.id, volunteer_id=volunteer.id))
-                    position_volunteers[position.id].add(volunteer.id)
-                    volunteer_assignment_count[volunteer.id] += 1
-                    volunteer_daily_assignment_count[volunteer.id][shift_dict[position.shift_id].time_slot.day] += 1
-
-                    # Assign the volunteer team to the generation specific volunteer during its first assignment
-                    if volunteer_dict[volunteer.id].team is None:
-                        current_service_name = service_dict[position.service_id].name
-                        suitable_teams = [team for team in teams if current_service_name in team.services]
-
-                        # Randomly select a suitable team
-                        if suitable_teams:
-                            selected_team = random.choice(suitable_teams)
-                            volunteer_dict[volunteer.id].team = selected_team.name
+                    if available_positions:
+                        selected_position = random.choice(available_positions)
+                        initialize_population_assign_volunteer(assignments, selected_position, position_volunteers,
+                                                               service_dict, shift_dict[shift_id],
+                                                               teams, volunteer, volunteer_assignment_count,
+                                                               volunteer_daily_assignment_count, volunteer_dict)
 
         population.append([assignments, gen_specific_vol])
 
@@ -364,7 +354,7 @@ def crossover(parent1: List[Assignment], parent2: List[Assignment]) -> tuple[lis
 def mutation(assignments: List[Assignment], positions: List[Position], volunteers: List[Volunteer],
              teams: List[Team], services: List[Service], shifts: List[Shift],
              mutation_rate: float, rare_mutation_rate: float) -> List[Assignment]:
-    new_assignments = assignments[:]
+    new_assignments = copy.deepcopy(assignments)
 
     # Check if mutation should occur
     if random.random() < mutation_rate:

@@ -89,7 +89,7 @@ def report_generation(best_solution: List[Assignment],
 
             writer.writerow([volunteer.id, max_assignments, assignments_days, missed_shift_preferences])
 
-    # Write a CSV report with these informations for the volunteers without assignments
+    # Write a CSV report with these information for the volunteers without assignments
     # volunteer_name
     with open('output/unassigned_volunteers.csv', 'w', newline='') as file:
         writer = csv.writer(file)

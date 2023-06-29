@@ -27,7 +27,7 @@ def read_input_volunteers(data_json):
     for index, row in df.iterrows():
         # Initialize the volunteer data
         volunteer = {
-            'id': f"{row[1]}",
+            'id': f"{row[0 ]} ({row[1]})",
             'team': None,
             'preferred_shifts': [],
             'avoid_shifts': []
@@ -35,7 +35,7 @@ def read_input_volunteers(data_json):
 
         # Create a mapping of shifts to their corresponding datetime
         shift_mapping = {
-            f"{shift['time_slot']['day']}\n{shift['time_slot']['start']} - {shift['time_slot']['end']}": shift['id']
+            shift['id']: f"{shift['time_slot']['day']}\n{shift['time_slot']['start']} - {shift['time_slot']['end']}"
             for shift in data_json['shifts']
         }
 
@@ -47,7 +47,7 @@ def read_input_volunteers(data_json):
         volunteer['skills'] = {skill: 1 for skill in volunteer_skills}
 
         # Process each shift
-        for shift_time, shift_id in shift_mapping.items():
+        for shift_id, shift_time in shift_mapping.items():
             if shift_time in df.columns:
                 if str(row[shift_time]).lower() in ['yes', 'ok', 'x']:
                     volunteer['preferred_shifts'].append(shift_id)
