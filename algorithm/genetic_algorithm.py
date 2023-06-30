@@ -219,7 +219,7 @@ def default_fitness_function(assignments: List[Assignment], positions: List[Posi
             fitness -= fitness_weights["recommended_volunteers"]
 
     # OPTIONAL
-    # Criteria 2: Each service has at least a volunteer per every key skill required by the service
+    # Criteria 2: Each position has at least a volunteer per every key skill required by the service
     for position in positions:
         service = service_dict[position.service_id]
         volunteers_in_position = [volunteer_dict[vol_id] for vol_id in position_volunteers.get(position.id, [])]
@@ -284,14 +284,6 @@ def default_fitness_function(assignments: List[Assignment], positions: List[Posi
             time_slots_assigned[(day, start, end)] = site
         else:
             fitness += fitness_weights["no_multiple_sites"]
-
-    # OUTSTANDING
-    # Criteria 8: There must not be a vacant position
-    for position in positions:
-        if len(position_volunteers.get(position.id, [])) < position.min_volunteers:
-            fitness -= fitness_weights["no_vacant_positions"]
-        else:
-            fitness += fitness_weights["no_vacant_positions"]
 
     return fitness
 

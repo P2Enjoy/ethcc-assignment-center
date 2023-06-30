@@ -14,8 +14,8 @@ VOLUNTEERS = os.getenv('VOLUNTEERS')
 
 # Generation parameters
 inference_config = {
-    "population_size": 10,
-    "number_of_generations": 350,
+    "population_size": 15,
+    "number_of_generations": 200,
     "crossover_rate": 0.95,
     "mutation_rate": 0.95,
     "tournament_size": 7,
@@ -33,7 +33,7 @@ inference_config = {
         "single_assignment_per_day": 10,
         # OUTSTANDING
         # Criteria 4: All volunteers must not be assigned more than 4 times total
-        "limited_assignments": 250,
+        "limited_assignments": 25,
         # OPTIONAL
         # Criteria 5: All assignments for a position concerns volunteers of the same team as much as possible
         "team_variety": 7,
@@ -41,12 +41,9 @@ inference_config = {
         # Criteria 6: All assignments respect the volunteer expression regarding their shift preferences, both to be assigned and not to be assigned
         "shift_preferences": 2,
         # OUTSTANDING
-        "shift_unavailable": 500,
+        "shift_unavailable": 5000,
         # OUTSTANDING
         # Criteria 7: A volunteer can not be assigned at two different sites at the same time
         "no_multiple_sites": 2000,
-        # OUTSTANDING
-        # Criteria 8: There must not be a vacant position
-        "no_vacant_positions": 500,
     }
 }
