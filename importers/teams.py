@@ -11,8 +11,8 @@ def read_input_teams():
 
     teams = []
     for i, row in df.iterrows():
-        services = [x.strip() for x in row[2].split(',')]
-        team = {"name": row[0], "leader": row[1],  "services": list(services)}
+        services = [f"{x.strip()} {row[1]}" for x in row[3].split(',')]
+        team = {"name": row[0], "leader": row[2],  "services": list(services)}
         teams.append(team)
 
     return teams

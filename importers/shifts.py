@@ -1,6 +1,3 @@
-from importers.data import organisation_json
-
-
 def parse_shift_time(shift_time):
     start_time, end_time = shift_time.split(' - ')
     return start_time, end_time
@@ -29,6 +26,3 @@ def read_input_shifts(json_data):
             seen_shifts.add(shift_tuple)
             shift_id += 1
     return shifts
-
-
-data_json_shifts = read_input_shifts(organisation_json)

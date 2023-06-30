@@ -15,7 +15,7 @@ def generate_input_positions(input_data, organisation_data):
         shift_id = None
         service_id = None
         for shift in shifts_dict.values():
-            if shift['time_slot']['day'] in org['Day'] and shift['time_slot']['start'] in org['Shift']:
+            if shift['site'] in org['Site'] and shift['time_slot']['day'] in org['Day'] and shift['time_slot']['start'] in org['Shift'] and shift['time_slot']['end'] in org['Shift']:
                 shift_id = shift['id']
                 break
         service_id = services_dict.get(org['Service'])

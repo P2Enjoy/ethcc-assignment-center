@@ -6,8 +6,7 @@ load_dotenv()
 # Teams
 TEAMS = os.getenv('TEAMS')
 # Shifts per site
-MDM = os.getenv('MDM')
-CDB = os.getenv('CDB')
+ORGANIZATION = os.getenv('ORGANIZATION')
 # Skills oer service
 SERVICES = os.getenv('SERVICES')
 # Volunteer database
