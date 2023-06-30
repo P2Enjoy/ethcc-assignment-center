@@ -1,19 +1,21 @@
 import copy
-import json
-import statistics
 import random
-import numpy as np
-from typing import List, Dict, Any
+import statistics
 from collections import defaultdict
+from typing import List, Dict, Any
 
-from exporters.csv import report_generation
+import numpy as np
+
 from algorithm.models import TimeSlot, Shift, Service, Team, Volunteer, Position, Assignment
+from exporters.csv import report_generation
 
 
 def initialize_population_assign_volunteer(assignments, position, position_volunteers, service_dict, shift, teams,
                                            volunteer, volunteer_assignment_count, volunteer_daily_assignment_count,
-                                           volunteer_dict):
+                                           volunteer_dict, acceptable_max_per_position):
+    # Generate the assignment
     assignments.append(Assignment(position_id=position.id, volunteer_id=volunteer.id))
+    # Update the global counters
     position_volunteers[position.id].add(volunteer.id)
     volunteer_assignment_count[volunteer.id] += 1
     volunteer_daily_assignment_count[volunteer.id][shift.time_slot.day] += 1
@@ -26,6 +28,10 @@ def initialize_population_assign_volunteer(assignments, position, position_volun
         if suitable_teams:
             selected_team = random.choice(suitable_teams)
             volunteer_dict[volunteer.id].team = selected_team.name
+
+    tot_pos_vol = len(position_volunteers[position.id])
+    if tot_pos_vol > acceptable_max_per_position:
+        print("Number of volunteers exceeded!!!")
 
 
 def initialize_population_volunteers_weighted_sample(num_volunteers, candidates, volunteer_assignment_count):
@@ -69,9 +75,14 @@ def initialize_population(population_size: int, positions: List[Position], volun
 
         # Assign generation specifics volunteers considering the constraints
         for position in positions:
+
             service = service_dict[position.service_id]
             required_skills = set(service.key_skills)
             shift = shift_dict[position.shift_id]
+
+            # Skip all position having enough volunteers
+            if len(position_volunteers[position.id]) > position.recommended_volunteers:
+                continue
 
             # Select candidates who have required skills and
             # do not have the current position shift in their avoid list
@@ -94,50 +105,58 @@ def initialize_population(population_size: int, positions: List[Position], volun
             else:
                 suitable_team_candidates = []
 
-            # This subset have ALL the skills for the position
+            # This subset have ALL the skills for the position and the same team
             perfect_team_candidates = [vol for vol in suitable_team_candidates if
                                        all(skill in vol.skills for skill in required_skills)]
 
-            required_volunteers = position.min_volunteers
-            assigned_volunteers = 0
+            volunteers_to_sample = max(1, position.recommended_volunteers - len(position_volunteers[position.id]))
             candidates_pools = [
                 [perfect_team_candidates, 1],
-                [suitable_team_candidates, required_volunteers],
-                [perfect_candidates, required_volunteers],
-                [suitable_candidates, required_volunteers],
+                [suitable_team_candidates, volunteers_to_sample],
+                [perfect_candidates, volunteers_to_sample],
+                [suitable_candidates, volunteers_to_sample],
                 [[vol for vol in gen_specific_vol
-                  if position.shift_id not in vol.avoid_shifts], required_volunteers]
+                  if position.shift_id not in vol.avoid_shifts], volunteers_to_sample]
             ]
 
-            # Loop until there are at least the minimum required number of volunteers
-            # or there are no volunteers left.
-            goal_reached = False
-            while not goal_reached:
-                goal_reached = True
+            # Try to reach the required number of volunteers
+            for pool, sample_num in candidates_pools:
+                if not pool:
+                    continue
 
-                # Loop through each pool of candidates in priority order.
-                for pool, sample_num in candidates_pools:
-                    # Filter available candidates from the current pool whi have less than 4 assignments,
-                    # and have not reached daily assignment limit
-                    available_from_pool = [vol for vol in pool if
-                                           volunteer_assignment_count[vol.id] < 4 and
-                                           volunteer_daily_assignment_count[vol.id][shift.time_slot.day] < 1]
+                # Break the assignments if the goal is reached
+                if len(position_volunteers[position.id]) >= position.recommended_volunteers:
+                    break
 
-                    for vol in initialize_population_volunteers_weighted_sample(sample_num, available_from_pool, volunteer_assignment_count):
-                        # Assign the volunteer to the position using the provided function
-                        initialize_population_assign_volunteer(assignments, position, position_volunteers,
-                                                               service_dict, shift, teams, vol,
-                                                               volunteer_assignment_count,
-                                                               volunteer_daily_assignment_count, volunteer_dict)
-                        assigned_volunteers += 1
+                # Adjust to requirements to reach the goal capped at sample_num
+                sample_num = min((position.recommended_volunteers - len(position_volunteers[position.id])), sample_num)
+                if sample_num < 1:
+                    continue
 
-                    if assigned_volunteers < required_volunteers:
-                        goal_reached = False
-                    else:
-                        goal_reached = True
-                        break
+                # Filter available candidates from the current pool having less than 4 assignments,
+                # and have not reached daily assignment limit
+                available_from_pool = [vol for vol in pool if
+                                       volunteer_assignment_count[vol.id] < 4 and
+                                       volunteer_daily_assignment_count[vol.id][shift.time_slot.day] < 1]
 
-        # Attempt to add preferred shifts for the remaining generation specifics volunteers
+                for vol in initialize_population_volunteers_weighted_sample(sample_num, available_from_pool,
+                                                                            volunteer_assignment_count):
+                    # Assign the volunteer to the position using the provided function
+                    initialize_population_assign_volunteer(assignments, position, position_volunteers,
+                                                           service_dict, shift, teams, vol,
+                                                           volunteer_assignment_count,
+                                                           volunteer_daily_assignment_count, volunteer_dict,
+                                                           position.recommended_volunteers)
+
+            if len(position_volunteers[position.id]) < position.recommended_volunteers:
+                print(f"Could not satisfy "
+                      f"{str(service.name)} in "
+                      f"{str(shift.site)} at "
+                      f"{str(shift.time_slot.start)} - {str(shift.time_slot.end)}: "
+                      f"Required {str(volunteers_to_sample)}, assigned {str(len(position_volunteers[position.id]))}"
+                      )
+
+        # Attempt to add preferred shifts for the generation specifics volunteers
         for volunteer in [vol for vol in gen_specific_vol if volunteer_assignment_count[vol.id] < 4]:
             preferred_shifts = set(volunteer.preferred_shifts) - set(
                 position_dict[assignment.position_id].shift_id for assignment in assignments
@@ -146,21 +165,22 @@ def initialize_population(population_size: int, positions: List[Position], volun
 
             for shift_id in preferred_shifts:
                 if volunteer_daily_assignment_count[volunteer.id][shift_dict[shift_id].time_slot.day] < 1:
-                    available_positions = [position for position in positions if position.shift_id == shift_id and
+                    available_positions = [position for position in positions if
+                                           position.shift_id == shift_id and
                                            len(position_volunteers[position.id]) < position.max_volunteers]
 
                     if available_positions:
                         selected_position = random.choice(available_positions)
-                        initialize_population_assign_volunteer(assignments, selected_position, position_volunteers,
+                        initialize_population_assign_volunteer(assignments, selected_position,
+                                                               position_volunteers,
                                                                service_dict, shift_dict[shift_id],
                                                                teams, volunteer, volunteer_assignment_count,
-                                                               volunteer_daily_assignment_count, volunteer_dict)
+                                                               volunteer_daily_assignment_count, volunteer_dict,
+                                                               position.max_volunteers)
 
         population.append([assignments, gen_specific_vol])
 
-        if population_size < 2:
-            print(f'Rare mutation occurred.')
-        else:
+        if population_size > 2:
             print(
                 f'Generated population {num} out of total pool {population_size} with diversity of {calculate_population_diversity(population[-2:])}.')
 
@@ -362,6 +382,7 @@ def mutation(assignments: List[Assignment], positions: List[Position], volunteer
         # Sometimes the child have nothing in common with ancestors, making a one-of-a-kind mutation
         if random.random() < rare_mutation_rate:
             # Generate a single new individual using a modified initialize_population function
+            print(f'Rare mutation occurred.')
             new_individual, _ = map(list, zip(*initialize_population(1, positions, volunteers, teams, services, shifts)))
             return new_individual[0]
 
@@ -529,6 +550,63 @@ def genetic_algorithm(input_json: Dict, fitness_function=None) -> List[Dict[str,
             prev_diversity = current_diversity
 
         # Optionally print report
+        print(
+            f"Generation {generation}: Best Fitness = {max(fitness_values)}, Worst Fitness = {min(fitness_values)}, Avg Fitness = {statistics.mean(fitness_values)}, Median Fitness = {statistics.median(fitness_values)}")
+
+    # Find the index of the best solution in the population
+    best_solution_index = fitness_values.index(max(fitness_values))
+    # Extract the best solution (list of Assignments) and export the generation data
+    return report_generation(
+        population[best_solution_index],
+        position_dict,
+        shift_dict,
+        service_dict,
+        {volunteer.id: volunteer for volunteer in population_volunteers[best_solution_index]},
+        team_dict
+    )
+
+
+def flash_generation(input_json: Dict, fitness_function=None) -> List[Dict[str, Any]]:
+    # Extract values from input JSON
+    population_size = 1
+    number_of_generations = 1
+
+    # Extract and create objects from input JSON
+    teams = [Team(**t) for t in input_json["teams"]]
+    services = [Service(**s) for s in input_json["services"]]
+    shifts = [Shift(id=s["id"], time_slot=TimeSlot(**s["time_slot"]), site=s["site"]) for s in input_json["shifts"]]
+    positions = [Position(id=p["id"], shift_id=p["shift_id"], service_id=p["service_id"],
+                          min_volunteers=p["volunteers"]["min"], max_volunteers=p["volunteers"]["max"],
+                          recommended_volunteers=p["volunteers"]["recommended"]) for p in input_json["positions"]]
+
+    # Create dictionaries for easier lookup
+    position_dict = {position.id: position for position in positions}
+    shift_dict = {shift.id: shift for shift in shifts}
+    service_dict = {service.id: service for service in services}
+    team_dict = {team.name: team for team in teams}
+
+    # Initialize the population
+    population, population_volunteers = map(list, zip(
+        *initialize_population(
+            population_size=population_size,
+            positions=positions,
+            teams=teams,
+            volunteers=[Volunteer(**v) for v in input_json["volunteers"]],
+            services=services,
+            shifts=shifts
+        )
+    ))
+
+    # Run the genetic algorithm
+    fitness_values = []
+    for generation in range(number_of_generations):
+        # Calculate fitness
+        fitness_values = [
+            fitness_function(assignments, positions, volunteers, teams, services, shifts, input_json["fitness_weights"])
+            for assignments, volunteers in zip(population, population_volunteers)
+        ]
+
+        # Print report
         print(
             f"Generation {generation}: Best Fitness = {max(fitness_values)}, Worst Fitness = {min(fitness_values)}, Avg Fitness = {statistics.mean(fitness_values)}, Median Fitness = {statistics.median(fitness_values)}")
 

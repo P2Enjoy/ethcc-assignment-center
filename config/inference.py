@@ -1,22 +1,27 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # Teams
-TEAMS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQM-04xKkb6pffTENTjGLIsjFw2L3hTCFgMX4leZF7WyjUc1Mh3MBCZGKeIfqAfM829Ml6qEQg43x4C/pub?output=csv'
+TEAMS = os.getenv('TEAMS')
 # Shifts per site
-MDM = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTaKfXjEWftHavdKwD1YJKLR1noJdEi-TskhGcUTUGcQ_6O67YX9MIsTEE1WGH4P6O1hZ84-gerYSMO/pub?output=csv"
-CDB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQwrj4_i1SUflGfopYKZ8iBtz5XUSM9DtCFfvC1v-SeqGXWRTn3n-Ugf2F2IH999Zev1drD1Jws48sF/pub?output=csv"
+MDM = os.getenv('MDM')
+CDB = os.getenv('CDB')
 # Skills oer service
-SERVICES = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRI2YS7YoZPIgu-zXbbC7Wj3KnC_R9NgOt66CwDZCLm9M4-TCpe7vw3ikRKNXzXFsvOVQcGpbohQumC/pub?output=csv"
+SERVICES = os.getenv('SERVICES')
 # Volunteer database
-VOLUNTEERS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT4qWf0v6JO4V80G_vPh95OsO4OCmaBwDWOvCAC-X-7bVkBq8ZpgVh5Z5fnASnUDB_z619c7co3MEeE/pub?output=csv"
+VOLUNTEERS = os.getenv('VOLUNTEERS')
 
 # Generation parameters
 inference_config = {
-    "population_size": 50,
-    "number_of_generations": 100,
-    "crossover_rate": 0.85,
-    "mutation_rate": 0.05,
+    "population_size": 10,
+    "number_of_generations": 350,
+    "crossover_rate": 0.95,
+    "mutation_rate": 0.95,
     "tournament_size": 7,
-    "select_second_best": 0.2,
-    "rare_mutation_rate": 0.15,
+    "select_second_best": 0.15,
+    "rare_mutation_rate": 0.75,
     "fitness_weights": {
         # OUTSTANDING
         # Criteria 1: Each position has the recommended number of volunteers at best or between min/max

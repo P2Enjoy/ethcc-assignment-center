@@ -21,7 +21,7 @@ def report_generation(best_solution: List[Assignment],
             volunteer = volunteers[assignment.volunteer_id]
             shift = shifts[position.shift_id]
             service = services[position.service_id]
-            team = teams[volunteer.team] if volunteer.team in teams else None
+            team = teams[volunteer.team] if volunteer.team in teams else Team(name="Unassigned", leader="Unassigned", services=[])
             day = shift.time_slot.day
             time_slot = f"{shift.time_slot.start} - {shift.time_slot.end}"
             site = shift.site
@@ -35,7 +35,7 @@ def report_generation(best_solution: List[Assignment],
     with open('output/site_managers_report.csv', 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(
-            ["site", "service", "day", "time_slot", "unmet_skills", "missing_volunteers_to_meet_expectations"])
+            ["site", "service", "day", "time_slot", "required", "assigned", "unmet_skills", "missing_volunteers_to_meet_expectations", "volunteers"])
         position_counts = {}
         for assignment in best_solution:
             position = positions[assignment.position_id]
@@ -59,7 +59,12 @@ def report_generation(best_solution: List[Assignment],
                 unmet_skills.difference_update(set(skills.keys()))
             unmet_skills = ", ".join(unmet_skills)
 
-            writer.writerow([site, service.name, day, time_slot, unmet_skills, missing_volunteers])
+            # Calculate assigned volunteers list
+            all_volunteers = [volunteers[assignment.volunteer_id].id for assignment in best_solution if
+                              assignment.position_id == position_id]
+            all_volunteers_names = ", ".join(all_volunteers)
+
+            writer.writerow([site, service.name, day, time_slot, position.recommended_volunteers, assigned_volunteers, unmet_skills, missing_volunteers, all_volunteers_names])
 
     # Write a CSV report with these informations for the event organizers
     # volunteer_name, max assignments, [assignments day1, assignment day2, assignment day...], missed shift preferences
